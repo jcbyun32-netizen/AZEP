@@ -163,7 +163,6 @@ h1{font-size:1.7rem}.sub{font-size:1.05rem}.lb{font-size:1rem}
 <script>
 /* ===== 설정 ===== */
 const KEY='ls_qrscan_v2',MAXU=100;
-const WM_TEAM='LS IQC Team (Kevin. C)';   // 워터마크 마지막 줄(고정 문구)
 const EP_N={DC:13,AC:15},EN_N=42;                                                     // 촬영 개소 수
 const PN={ep:'E-PANEL',en:'ENCLOSURE'};
 /* QR(=Enclosure 시리얼) → 구분/업체/Type/Skid 표 */
@@ -235,7 +234,7 @@ function wmLines(){
   if(GEO.q&&(GEO.l2||GEO.l3)){l2=GEO.l2;l3=GEO.l3}
   else if(GEO.lat||GEO.lon)l2=GEO.lat.toFixed(5)+', '+GEO.lon.toFixed(5);
   else l2='Location unavailable';
-  return [wmTime(),l2,l3,WM_TEAM].filter(Boolean);
+  return [wmTime(),l2,l3].filter(Boolean);
 }
 function drawWM(x,w,h){
   const L=wmLines(),fs=Math.max(14,Math.round(Math.min(w,h)*0.045)),lh=Math.round(fs*1.28),pad=Math.round(fs*0.7);
@@ -250,9 +249,9 @@ function toPhoto(src,sw,sh){
 }
 /* ===== 엑셀 ===== */
 const ROWPT=90,ROWPX=120,FIRST=4;
-const COLS=['NO','날짜','요일','주차','구분','업체','TYPE','ENCLOSURE S/N','SKID S/N','검사부위','촬영위치','발생원인','불량현상_구분','불량현상_세부','대상부품/부위','불량현상_상세','결함등급','IMAGE','PUNCH LIST'];
-const LET='ABCDEFGHIJKLMNOPQRS',IMGC=17;
-const W=[6,11.6,5,6.25,7,13,6,16,16,12,10,14,18,22,20,35,10,24,20.9];
+const COLS=['NO','날짜','요일','주차','구분','업체','TYPE','ENCLOSURE S/N','검사부위','촬영위치','발생원인','불량현상_구분','불량현상_세부','대상부품/부위','불량현상_상세','결함등급','IMAGE','PUNCH LIST'];
+const LET='ABCDEFGHIJKLMNOPQR',IMGC=16;
+const W=[6,11.6,5,6.25,7,13,6,30,12,10,14,18,22,20,35,10,24,20.9];
 function photoRows(){const R=[];S.units.forEach(u=>['ep','en'].forEach(part=>{const n=nOf(u,part);for(let i=0;i<n;i++){const p=P[pk(u,part,i)];if(p)R.push({u,part,i,p})}}));return R}
 
 function crc32(buf){
@@ -340,9 +339,8 @@ function sheetXml(){
     add(r,`<c r="A${r}" s="3"><f>${xe(`IF(B${r}="","",ROW()-3)`)}</f><v>${k+1}</v></c><c r="B${r}" s="5"><v>${I.ser}</v></c>`+
       `<c r="C${r}" s="3" t="str"><f>${xe(`IF(B${r}="","",CHOOSE(WEEKDAY(B${r},2),"월","화","수","목","금","토","일"))`)}</f><v>${I.day}</v></c>`+
       `<c r="D${r}" s="3" t="str"><f>${xe(`IF(B${r}="","",${wk})`)}</f><v>${I.wk}</v></c>`+
-      cell('E'+r,3,u.grp)+cell('F'+r,3,coText(u))+cell('G'+r,3,u.type)+cell('H'+r,3,u.serial)+cell('I'+r,3,u.skid)+
-      cell('J'+r,3,PN[o.part])+cell('K'+r,3,(o.i+1)+'/'+nOf(u,o.part))+
-      ['L','M','N','O','P','Q','R','S'].map(c=>`<c r="${c}${r}" s="3"/>`).join(''));
+      cell('E'+r,3,u.grp)+cell('F'+r,3,coText(u))+cell('G'+r,3,u.type)+cell('H'+r,3,u.serial)+cell('I'+r,3,PN[o.part])+cell('J'+r,3,(o.i+1)+'/'+nOf(u,o.part))+
+      ['K','L','M','N','O','P','Q','R'].map(c=>`<c r="${c}${r}" s="3"/>`).join(''));
   });
   const rowsX=Object.keys(R).map(Number).sort((a,b)=>a-b).map(r=>`<row r="${r}"${ht[r]?` ht="${ht[r]}" customHeight="1"`:''}>${R[r]}</row>`).join('');
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><cols>'+W.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols><sheetData>'+rowsX+'</sheetData><pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'+(rows.length?'<drawing r:id="rId1"/>':'')+'</worksheet>';
@@ -478,16 +476,16 @@ document.addEventListener('visibilitychange',()=>{
 });
 /* ===== 시리얼 처리 ===== */
 function findEnc(raw){
-  const s=cleanVal(raw).toUpperCase(),m=s.match(/MEC\d{5}[A-Z]{2}/),key=m?m[0]:s.replace(/\s/g,'');
+  const s=cleanVal(raw).toUpperCase(),m=s.match(/MEC\d{5}[A-Z]{2}/),key=m?m[0]:'';
   return TABLE.find(t=>t.enc===key)||null;
 }
 function handleSerial(raw,manual){
-  const t=findEnc(raw);
+  const t=findEnc(raw),full=cleanVal(raw);
   if(!t){const m='등록되지 않은 시리얼입니다.\n'+cleanVal(raw).slice(0,40);if(manual)tell(m);else toast('등록되지 않은 시리얼: '+cleanVal(raw).slice(0,30),'bad');beep(false);return false}
-  let u=S.units.find(x=>x.serial===t.enc);
+  let u=S.units.find(x=>x.serial===full);
   if(!u){
     if(S.units.length>=MAXU){toast('최대 '+MAXU+'대까지 가능합니다.','bad');beep(false);return false}
-    u={id:newId(),serial:t.enc,skid:t.skid,grp:t.grp,co:t.co,sub:t.sub,type:t.type};S.units.push(u);
+    u={id:newId(),serial:full,skid:t.skid,grp:t.grp,co:t.co,sub:t.sub,type:t.type};S.units.push(u);
   }
   beep(true);openUnit(u.id);return true;
 }
@@ -544,7 +542,7 @@ function updateList(){
   for(let i=n-1;i>=0;i--){const u=S.units[i],ep=cntOf(u,'ep'),epn=nOf(u,'ep'),en=cntOf(u,'en'),enn=nOf(u,'en');
     const b=(t,c,m)=>`<span class="pill ${c>=m?'done':''}">${t} ${c}/${m}</span>`;
     h+=`<section class="card ph"><div class="thr" style="margin:0 0 .3rem"><b class="serial2">${esc(u.serial)}</b><button class="dx" onclick="delUnit('${u.id}')">삭제</button></div>
-    <div class="meta">${u.grp} · ${esc(coText(u))} · TYPE ${u.type} · SKID ${esc(u.skid)}</div>
+    <div class="meta">${u.grp} · ${esc(coText(u))} · TYPE ${u.type}</div>
     <div style="margin:.5rem 0">${b('E-PANEL',ep,epn)}${enn?b('ENCLOSURE',en,enn):'<span class="pill">E-PANEL만 검사</span>'}</div>
     <button class="mid" onclick="openUnit('${u.id}')">촬영 ${ep+en?'이어서 하기':'시작'}</button></section>`;
   }
@@ -573,7 +571,7 @@ async function delUnit(id){
 function renderUnit(){
   const u=unitOf(S.cur.id);
   $('app').innerHTML=`<section class="card" style="padding:.7rem .9rem"><div class="thr" style="margin:0 0 .3rem"><button class="dx" style="color:var(--ink)" onclick="toScan()">← 목록</button><b class="serial2">${esc(u.serial)}</b></div>
-  <div class="meta">${u.grp} · ${esc(coText(u))} · TYPE ${u.type} · SKID ${esc(u.skid)}</div>
+  <div class="meta">${u.grp} · ${esc(coText(u))} · TYPE ${u.type}</div>
   ${u.co==='LSE'?'':'<div class="meta" style="color:var(--brand);font-weight:700;margin-top:.2rem">인투알 제품 · E-PANEL만 검사합니다</div>'}</section>
   <div class="tabs" id="tabs"></div>
   <div class="ttl2" id="slotTtl"></div>
