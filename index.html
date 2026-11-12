@@ -269,10 +269,7 @@ function toPhoto(src,sw,sh){
   return{d:c.toDataURL('image/jpeg',0.75),w,h};
 }
 /* ===== 엑셀 ===== */
-const ROWPT=90,ROWPX=120,FIRST=4;
-const COLS=['NO','날짜','요일','주차','구분','업체','TYPE','ENCLOSURE S/N','검사부위','촬영위치','발생원인','불량현상_구분','불량현상_세부','대상부품/부위','불량현상_상세','결함등급','IMAGE','PUNCH LIST'];
-const LET='ABCDEFGHIJKLMNOPQR',IMGC=16;
-const W=[6,11.6,5,6.25,7,13,6,30,12,10,14,18,22,20,35,10,24,20.9];
+const ROWPX=140,ROWPT=105,HDPT=72,PCW=24,SNW=20,NTW=24;   // 사진칸 크기(가로형 시트)
 function photoRows(){const R=[];S.units.forEach(u=>['ep','en'].forEach(part=>{const n=nOf(u,part);for(let i=0;i<n;i++){const p=P[pk(u,part,i)];if(p)R.push({u,part,i,p})}}));return R}
 
 function crc32(buf){
@@ -336,61 +333,80 @@ function askInput(msg,okText){
 }
 
 const cell=(ref,s,t)=>t===''||t==null?`<c r="${ref}" s="${s}"/>`:`<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xe(t)}</t></is></c>`;
-function dInfo(ds){
-  const [y,m,d]=ds.split('-').map(Number),D=864e5,t=Date.UTC(y,m-1,d),iso=x=>(new Date(x).getUTCDay()+6)%7+1;
-  const f=Date.UTC(y,m-1,1),fw=iso(f),st=f+(fw>5?8-fw:1-fw)*D;
-  return{ser:Math.round((t-Date.UTC(1899,11,30))/D),day:'월화수목금토일'[iso(t)-1],wk:(Math.max(0,Math.floor((t-st)/(7*D)))+1)+'주차'};
-}
+const colL=n=>{let r='';n++;while(n>0){const m=(n-1)%26;r=String.fromCharCode(65+m)+r;n=Math.floor((n-1)/26)}return r};
 function stylesXml(){
   const bd='<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>';
-  const xf=(f,fi,b,al,n)=>`<xf numFmtId="${n||0}" fontId="${f}" fillId="${fi}" borderId="${b}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment ${al}/></xf>`;
-  const fo=(b,sz)=>`<font>${b?'<b/>':''}<sz val="${sz}"/><name val="맑은 고딕"/></font>`,C='horizontal="center" vertical="center" wrapText="1"';
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/></numFmts>'+
-  '<fonts count="3">'+fo(0,10)+fo(1,10)+fo(1,14)+'</fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill></fills>'+
+  const C='horizontal="center" vertical="center" wrapText="1"';
+  const xf=(f,fi,b,al)=>`<xf numFmtId="0" fontId="${f}" fillId="${fi}" borderId="${b}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment ${al}/></xf>`;
+  const fo=b=>`<font>${b?'<b/>':''}<sz val="10"/><name val="맑은 고딕"/></font>`;
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2">'+fo(0)+fo(1)+'</fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill></fills>'+
   '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'+bd+'</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
-  '<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+xf(1,2,1,C)+xf(2,0,0,'horizontal="left" vertical="center"')+xf(0,0,1,C)+xf(0,0,1,C)+xf(0,0,1,C,164)+'</cellXfs></styleSheet>';
+  '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+xf(1,2,1,C)+xf(0,0,1,C)+'</cellXfs></styleSheet>';
 }
-
-function sheetXml(){
-  const R={},ht={1:33,3:48},add=(r,x)=>{R[r]=(R[r]||'')+x},rows=photoRows(),I=dInfo(S.date);
-  add(1,cell('A1',2,'IQC 검사 사진 정리 ('+S.date+')'));
-  COLS.forEach((t,i)=>add(3,cell(LET[i]+3,1,t)));
-  rows.forEach((o,k)=>{const r=FIRST+k,u=o.u;ht[r]=ROWPT;
-    const wk=`(MAX(0,INT((B${r}-(DATE(YEAR(B${r}),MONTH(B${r}),1)+IF(WEEKDAY(DATE(YEAR(B${r}),MONTH(B${r}),1),2)>5,8-WEEKDAY(DATE(YEAR(B${r}),MONTH(B${r}),1),2),1-WEEKDAY(DATE(YEAR(B${r}),MONTH(B${r}),1),2))))/7))+1)&"주차"`;
-    add(r,`<c r="A${r}" s="3"><f>${xe(`IF(B${r}="","",ROW()-3)`)}</f><v>${k+1}</v></c><c r="B${r}" s="5"><v>${I.ser}</v></c>`+
-      `<c r="C${r}" s="3" t="str"><f>${xe(`IF(B${r}="","",CHOOSE(WEEKDAY(B${r},2),"월","화","수","목","금","토","일"))`)}</f><v>${I.day}</v></c>`+
-      `<c r="D${r}" s="3" t="str"><f>${xe(`IF(B${r}="","",${wk})`)}</f><v>${I.wk}</v></c>`+
-      cell('E'+r,3,u.grp)+cell('F'+r,3,coText(u))+cell('G'+r,3,u.type)+cell('H'+r,3,u.serial)+cell('I'+r,3,PN[o.part])+cell('J'+r,3,(o.i+1)+'/'+nOf(u,o.part))+
-      ['K','L','M','N','O','P','Q','R'].map(c=>`<c r="${c}${r}" s="3"/>`).join(''));
+/* 시트 구성: E-PANEL / ENCLOSURE(M-LINK) 각각 1시트, 1대 = 1행, 사진은 가로로 */
+function enTitles(){
+  return EXT.EN.map((t,i)=>{
+    if(i===0||i>36)return t;
+    const g=i<=12?1:i<=24?2:3;
+    return 'M-LINK '+g+'# '+t.replace(/^M-Link\s*/,'');
   });
-  const rowsX=Object.keys(R).map(Number).sort((a,b)=>a-b).map(r=>`<row r="${r}"${ht[r]?` ht="${ht[r]}" customHeight="1"`:''}>${R[r]}</row>`).join('');
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><cols>'+W.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')+'</cols><sheetData>'+rowsX+'</sheetData><pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'+(rows.length?'<drawing r:id="rId1"/>':'')+'</worksheet>';
 }
-function drawingXml(){
-  const EMU=9525,CW=Math.round(W[IMGC]*7+5);let a='';
-  photoRows().forEach((o,k)=>{
-    const sc=Math.min((CW-6)/o.p.w,(ROWPX-6)/o.p.h),cx=Math.round(o.p.w*sc*EMU),cy=Math.round(o.p.h*sc*EMU),r=FIRST-1+k;
-    a+=`<xdr:oneCellAnchor><xdr:from><xdr:col>${IMGC}</xdr:col><xdr:colOff>${3*EMU}</xdr:colOff><xdr:row>${r}</xdr:row><xdr:rowOff>${3*EMU}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${k+2}" name="사진 ${k+1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${k+1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
+function sheetDefs(){
+  const d=[];
+  [['ep','E-PANEL',EXT.AC.slice()],['en','ENCLOSURE',enTitles()]].forEach(([part,name,titles])=>{
+    const us=S.units.filter(u=>nOf(u,part)>0&&cntOf(u,part)>0);
+    if(us.length)d.push({part,name,titles,us});
+  });
+  return d;
+}
+function sheetXml(sh){
+  const nt=sh.titles.length,last=nt+1,rows=[];
+  let h=cell('A1',1,'S/N');sh.titles.forEach((t,i)=>{h+=cell(colL(i+1)+'1',1,t)});h+=cell(colL(last)+'1',1,'비고');
+  rows.push(`<row r="1" ht="${HDPT}" customHeight="1">${h}</row>`);
+  const pics=[];
+  sh.us.forEach((u,k)=>{
+    const r=k+2,n=nOf(u,sh.part);let x=cell('A'+r,2,u.serial);
+    for(let i=0;i<nt;i++){x+=`<c r="${colL(i+1)}${r}" s="2"/>`;const p=i<n?P[pk(u,sh.part,i)]:null;if(p)pics.push({c:i+1,r:r-1,p})}
+    x+=`<c r="${colL(last)}${r}" s="2"/>`;
+    rows.push(`<row r="${r}" ht="${ROWPT}" customHeight="1">${x}</row>`);
+  });
+  let cols=`<col min="1" max="1" width="${SNW}" customWidth="1"/><col min="2" max="${nt+1}" width="${PCW}" customWidth="1"/><col min="${last+1}" max="${last+1}" width="${NTW}" customWidth="1"/>`;
+  const xml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/></sheetView></sheetViews><cols>'+cols+'</cols><sheetData>'+rows.join('')+'</sheetData><pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'+(pics.length?'<drawing r:id="rId1"/>':'')+'</worksheet>';
+  return{xml,pics};
+}
+function drawingXml(pics){
+  const EMU=9525,CW=Math.round(PCW*7+5);let a='';
+  pics.forEach((o,k)=>{
+    const sc=Math.min((CW-6)/o.p.w,(ROWPX-6)/o.p.h),cx=Math.round(o.p.w*sc*EMU),cy=Math.round(o.p.h*sc*EMU);
+    a+=`<xdr:oneCellAnchor><xdr:from><xdr:col>${o.c}</xdr:col><xdr:colOff>${3*EMU}</xdr:colOff><xdr:row>${o.r}</xdr:row><xdr:rowOff>${3*EMU}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${k+2}" name="사진 ${k+1}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId${k+1}"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>`;
   });
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+a+'</xdr:wsDr>';
 }
 function buildXlsxBlob(){
   const H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n',R='http://schemas.openxmlformats.org/officeDocument/2006/relationships',PK='http://schemas.openxmlformats.org/package/2006/relationships';
-  const photos=photoRows(),hasP=photos.length>0;
-  const files=[
-    {name:'[Content_Types].xml',text:H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+(hasP?'<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>':'')+'</Types>'},
+  const defs=sheetDefs(),files=[],media=[];let ct='',wbS='',wbR='',img=0;
+  defs.forEach((sh,si)=>{
+    const n=si+1,sx=sheetXml(sh);
+    ct+=`<Override PartName="/xl/worksheets/sheet${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`;
+    wbS+=`<sheet name="${sh.name}" sheetId="${n}" r:id="rId${n}"/>`;wbR+=`<Relationship Id="rId${n}" Type="${R}/worksheet" Target="worksheets/sheet${n}.xml"/>`;
+    files.push({name:`xl/worksheets/sheet${n}.xml`,text:sx.xml});
+    if(sx.pics.length){
+      ct+=`<Override PartName="/xl/drawings/drawing${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`;
+      files.push({name:`xl/worksheets/_rels/sheet${n}.xml.rels`,text:H+`<Relationships xmlns="${PK}"><Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing${n}.xml"/></Relationships>`});
+      files.push({name:`xl/drawings/drawing${n}.xml`,text:drawingXml(sx.pics)});
+      let rel='';
+      sx.pics.forEach((o,k)=>{img++;rel+=`<Relationship Id="rId${k+1}" Type="${R}/image" Target="../media/image${img}.jpeg"/>`;media.push({name:`xl/media/image${img}.jpeg`,bin:b64ToBytes(o.p.d)})});
+      files.push({name:`xl/drawings/_rels/drawing${n}.xml.rels`,text:H+`<Relationships xmlns="${PK}">${rel}</Relationships>`});
+    }
+  });
+  const head=[
+    {name:'[Content_Types].xml',text:H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+ct+'</Types>'},
     {name:'_rels/.rels',text:H+`<Relationships xmlns="${PK}"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>`},
-    {name:'xl/workbook.xml',text:H+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets><calcPr fullCalcOnLoad="1"/></workbook>`},
-    {name:'xl/_rels/workbook.xml.rels',text:H+`<Relationships xmlns="${PK}"><Relationship Id="rId1" Type="${R}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="${R}/styles" Target="styles.xml"/></Relationships>`},
-    {name:'xl/styles.xml',text:stylesXml()},{name:'xl/worksheets/sheet1.xml',text:sheetXml()}
+    {name:'xl/workbook.xml',text:H+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${R}"><sheets>${wbS}</sheets></workbook>`},
+    {name:'xl/_rels/workbook.xml.rels',text:H+`<Relationships xmlns="${PK}">${wbR}<Relationship Id="rId${defs.length+1}" Type="${R}/styles" Target="styles.xml"/></Relationships>`},
+    {name:'xl/styles.xml',text:stylesXml()}
   ];
-  if(hasP){
-    files.push({name:'xl/worksheets/_rels/sheet1.xml.rels',text:H+`<Relationships xmlns="${PK}"><Relationship Id="rId1" Type="${R}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`});
-    files.push({name:'xl/drawings/drawing1.xml',text:drawingXml()});
-    files.push({name:'xl/drawings/_rels/drawing1.xml.rels',text:H+`<Relationships xmlns="${PK}">`+photos.map((p,i)=>`<Relationship Id="rId${i+1}" Type="${R}/image" Target="../media/image${i+1}.jpeg"/>`).join('')+'</Relationships>'});
-    photos.forEach((o,i)=>files.push({name:`xl/media/image${i+1}.jpeg`,bin:b64ToBytes(o.p.d)}));
-  }
-  return makeZip(files);
+  return makeZip(head.concat(files,media));
 }
 
 /* ===== 카메라 / QR ===== */
@@ -664,7 +680,7 @@ async function downloadXlsx(){
   if(miss.length&&!(await ask('촬영이 끝나지 않은 항목이 있습니다.\n'+miss.slice(0,6).join('\n')+(miss.length>6?'\n외 '+(miss.length-6)+'대':'')+'\n그래도 저장할까요?','저장')))return;
   const a=document.createElement('a');
   a.href=URL.createObjectURL(buildXlsxBlob());
-  a.download=('IQC_'+S.date+'_'+S.units.length+'대_사진'+R.length+'장').replace(/[\\/:*?"<>|\s]/g,'_')+'.xlsx';
+  a.download=('AZ사전검사_'+S.date+'_'+S.units.length+'대_사진'+R.length+'장').replace(/[\\/:*?"<>|\s]/g,'_')+'.xlsx';
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 (async function init(){
